@@ -274,10 +274,9 @@ export class Alerts {
           },
         }),
       h('button', {
-        class: 'icon-btn tg-btn',
+        class: 'tg-btn',
         title: 'Telegram bildirimleri: alarmlar telefonuna mesaj olarak gelsin',
-        'aria-label': 'Telegram bildirimleri',
-        html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M21 4L3 11l6 2.2M21 4l-3.2 16-7.3-5.3M21 4L9 13.2m0 0v5.6l2.9-3.4"/></svg>',
+        html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 4L3 11l6 2.2M21 4l-3.2 16-7.3-5.3M21 4L9 13.2m0 0v5.6l2.9-3.4"/></svg><span>Telegram</span>',
         onclick: () => openTelegramDialog(),
       }),
       h('button', {

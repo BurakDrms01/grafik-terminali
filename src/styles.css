@@ -2363,13 +2363,27 @@ body {
   font-weight: 600;
 }
 
-.icon-btn.tg-btn svg {
-  width: 17px;
-  height: 17px;
-}
-
-.icon-btn.tg-btn {
+/* Alarmlar başlığındaki Telegram düğmesi: yazılı, kolay bulunur */
+.tg-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+  flex: none;
+}
+
+.tg-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tg-btn svg {
+  width: 15px;
+  height: 15px;
 }
