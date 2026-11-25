@@ -2299,3 +2299,77 @@ body {
 .bb-btn.unavailable {
   opacity: 0.45;
 }
+
+/* Senkron durumu (üst çubuk, bulut simgesi) */
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+
+.sync-status:hover {
+  background: var(--hover);
+}
+
+.sync-status svg {
+  width: 19px;
+  height: 19px;
+}
+
+.sync-status[data-state='ok'] {
+  color: var(--up);
+}
+
+.sync-status[data-state='busy'] {
+  color: var(--accent);
+}
+
+.sync-status[data-state='offline'],
+.sync-status[data-state='waiting'] {
+  color: var(--warn);
+}
+
+/* Telegram bildirimleri penceresi */
+.tg-dialog p {
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+
+.tg-step b {
+  color: var(--accent);
+}
+
+.tg-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0 12px;
+  text-decoration: none;
+}
+
+.tg-error {
+  color: var(--down);
+  min-height: 1em;
+  font-size: 13px;
+}
+
+.tg-ok {
+  color: var(--up);
+  font-weight: 600;
+}
+
+.icon-btn.tg-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.icon-btn.tg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

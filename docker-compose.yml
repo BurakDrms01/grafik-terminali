@@ -9,3 +9,13 @@ services:
     mem_limit: 512m
     ports:
       - "127.0.0.1:5173:5173"
+    environment:
+      # Senkron deposu ve Telegram ayarı bu klasörde (aşağıdaki volume)
+      GT_DATA_DIR: /data
+      # Boş depoya ilk kaydı yalnızca bilgisayardaki uygulama yapabilir (bkz. server/api.ts)
+      GT_REQUIRE_PRIMARY_SEED: "1"
+    volumes:
+      - gt_data:/data
+
+volumes:
+  gt_data:

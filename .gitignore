@@ -3,6 +3,10 @@ node_modules/
 dist/
 .vite/
 
+# Sunucu verisi (senkron deposu, Telegram anahtarı) ve yerel ayar
+/data/
+/gt.local.json
+
 # Yerel araç ayarları ve gizli dosyalar
 .claude/
 .env

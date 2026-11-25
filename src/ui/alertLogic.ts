@@ -28,3 +28,20 @@ export function isHit(alert: Pick<Alert, 'dir' | 'price'>, price: number): boole
 export function collectHits(alerts: Alert[], symbolId: string, price: number): Alert[] {
   return alerts.filter((a) => a.symbolId === symbolId && a.triggeredAt === null && isHit(a, price));
 }
+
+/** Fiyatı alarm seviyesinin ondalık sayısıyla (en az 2) Türkçe biçimde yazar: 1.234,50 */
+function fmtLike(value: number, reference: number): string {
+  const decimals = Math.min(8, Math.max(2, (String(reference).split('.')[1] ?? '').length));
+  return new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: decimals }).format(value);
+}
+
+/** Telegram'a gönderilen alarm mesajı. appUrl verilirse uygulamayı açan bağlantı da eklenir. */
+export function alertMessage(alert: Pick<Alert, 'symbolName' | 'price' | 'dir'>, price: number, appUrl = ''): string {
+  const up = alert.dir === 'up';
+  const lines = [
+    `🔔 ${alert.symbolName}: ${up ? '↑' : '↓'} ${fmtLike(alert.price, alert.price)}`,
+    `${up ? 'Fiyat seviyeye çıktı' : 'Fiyat seviyeye indi'} · son fiyat ${fmtLike(price, alert.price)}`,
+  ];
+  if (appUrl) lines.push(appUrl);
+  return lines.join('\n');
+}

@@ -4,7 +4,7 @@ Tarayıcıda çalışan, yerel ve ücretsiz bir teknik analiz grafik uygulaması
 
 ![Grafik Terminali: AAPL saatlik grafik, Fibonacci düzeltmesi, ön/son piyasa gölgeleri ve gece seansı fiyatı](docs/ekran-goruntusu.jpg)
 
-> **English summary.** Grafik Terminali is a self-hosted charting terminal for technical analysis, written in TypeScript on top of [KLineChart](https://github.com/klinecharts/KLineChart) with no UI framework. It covers Borsa Istanbul, US equities (including pre/post-market and the live overnight price), FX, commodities and crypto. Features include every timeframe (down to 1-second bars for crypto, plus custom intervals built by timezone-aware aggregation), about 40 drawing tools with persistent per-tool settings, Fibonacci levels on a true logarithmic price axis, a TradingView-style magnet, bar replay, symbol comparison, price alerts and a watchlist. It runs locally (`npm start`) and can be reached privately from a phone through Tailscale. The logic is covered by 61 unit tests on the built-in `node:test` runner.
+> **English summary.** Grafik Terminali is a self-hosted charting terminal for technical analysis, written in TypeScript on top of [KLineChart](https://github.com/klinecharts/KLineChart) with no UI framework. It covers Borsa Istanbul, US equities (including pre/post-market and the live overnight price), FX, commodities and crypto. Features include every timeframe (down to 1-second bars for crypto, plus custom intervals built by timezone-aware aggregation), about 40 drawing tools with persistent per-tool settings, Fibonacci levels on a true logarithmic price axis, a TradingView-style magnet, bar replay, symbol comparison, price alerts and a watchlist. A small Node API (a Vite plugin) syncs drawings, watchlist, alerts and settings across devices and watches alerts server-side, sending Telegram messages even when no browser is open. It runs locally (`npm start`) or in Docker, reachable privately from a phone through Tailscale. The logic is covered by 68 unit tests on the built-in `node:test` runner.
 
 ## Neden yaptım?
 
@@ -42,7 +42,9 @@ Kullandığım grafik platformunun yıllık aboneliği çok pahalıydı. Benim i
 
 ### Takip
 - **İzleme listesi:** Anlık fiyat ve günlük değişim.
-- **Fiyat alarmları:** Grafikte sürüklenebilir çizgi olarak görünür. Uygulama açıkken çalışır.
+- **Fiyat alarmları:** Grafikte sürüklenebilir çizgi olarak görünür.
+- **Telegram bildirimi:** Sunucu alarmları dakikada bir kontrol eder ve tetiklenince Telegram'a mesaj atar. Uygulama kapalıyken de çalışır. Bot, tek seferlik bir kodla bağlanır.
+- **Cihazlar arası senkron:** Çizimler, izleme listesi, alarmlar ve ayarlar bilgisayar ile telefon arasında eşitlenir. Üst çubuktaki bulut simgesi durumu gösterir.
 - **Kısayollar:** Bütün kısayollar `?` tuşuyla açılan pencerede.
 
 ## Teknik ayrıntılar
@@ -52,8 +54,9 @@ Kullandığım grafik platformunun yıllık aboneliği çok pahalıydı. Benim i
 | Dil | TypeScript (strict), arayüz çatısı yok: doğrudan DOM |
 | Grafik motoru | KLineChart 10. Özel göstergeler, özel çizim araçları ve özel log ekseniyle genişletildi. |
 | Derleme | Vite |
-| Test | Node.js'in kendi `node:test` aracı, 61 birim testi |
-| Kalıcılık | Tarayıcının `localStorage`'ı; sunucu ya da hesap gerekmez |
+| Sunucu | Vite eklentisi olarak çalışan küçük bir Node API'si (`server/`): senkron deposu, alarm takibi, Telegram |
+| Test | Node.js'in kendi `node:test` aracı, 68 birim testi |
+| Kalıcılık | Tarayıcıda `localStorage`; sunucuda tek bir JSON dosyası (Docker volume) |
 
 Öne çıkan çözümler:
 - **Saat dilimine duyarlı mum birleştirme:** Gün, hafta ve ay sınırları borsanın yerel saatine göre (yaz/kış saati dahil) hesaplanır. Gün içi kovalar seans başından sayılır (`src/data/aggregate.ts`, `src/data/tz.ts`).
@@ -62,6 +65,9 @@ Kullandığım grafik platformunun yıllık aboneliği çok pahalıydı. Benim i
 - **Net çizim:** Çizgiler ve mum kenarları tam piksele hizalanır, yüksek DPI ekranlarda bulanıklaşmaz (`src/chart/engine.ts`).
 - **Logaritmik eksen:** Kütüphanenin log(1+x) ekseni yerine gerçek log ölçek ve okunaklı fiyat aralıkları (`src/chart/logAxis.ts`, `src/chart/logTicks.ts`).
 - **Yahoo vekili:** Tarayıcıdan doğrudan erişim CORS yüzünden mümkün olmadığı için Vite'ın sunucusu istekleri iletir. Tarayıcının çerezleri ve kaynak bilgileri dışarı gönderilmez (`vite.config.ts`).
+- **Senkron:** Kayıt başına sürüm numarasıyla çalışan, "son yazan kazanır" eşitleme. Gönderilmemiş yerel değişiklik gelen veriyle ezilmez. Bir cihazın ilk eşitlemesinde çizim ve alarm listeleri birleştirilir. Boş sunucuya ilk kaydı yalnızca bilgisayar yapabilir; böylece telefon önce açılırsa boş varsayılanları asıl verinin üstüne yazmaz (`src/sync.ts`, `src/data/syncLogic.ts`, `server/`).
+- **Sunucu alarmları:** Sunucunun tetiklediği bir alarm, telefondan gelen eski bir listeyle yeniden "bekliyor" durumuna dönmez. Her alarm için en fazla bir mesaj gider (`server/alerts.ts`).
+- **API güvenliği:** Her istek özel bir başlık ister. Vite yalnızca localhost kaynaklarına CORS izni verdiği için tarayıcıda açık başka bir site API'yi kullanamaz. Telegram anahtarı hiçbir yanıtta ve logda yer almaz (`server/api.ts`, `server/telegram.ts`).
 
 ## Kurulum
 
@@ -98,7 +104,7 @@ Uygulama bilgisayarda çalışır. [Tailscale](https://tailscale.com) ile telefo
    Hedef olarak yalnızca port numarası verilirse Tailscale `127.0.0.1`'e bağlanır. Vite ise çoğu sistemde yalnızca IPv6 (`::1`) adresinde dinlediği için bağlantı kurulamaz (502). `localhost` her ikisini de dener.
 3. Telefonda `https://<bilgisayar-adı>.<ağ-adı>.ts.net` adresini açın. İsterseniz "Ana ekrana ekle" ile uygulama gibi kullanın.
 
-Sunucu yalnızca bilgisayarın kendisinde dinler. Uygulamaya sadece kendi Tailscale ağınızdaki cihazlar erişebilir. Telefon kendi kayıtlarını tutar: bilgisayardaki çizimler telefonda otomatik görünmez.
+Sunucu yalnızca bilgisayarın kendisinde dinler. Uygulamaya sadece kendi Tailscale ağınızdaki cihazlar erişebilir. Bilgisayar kapalıyken de erişmek için aşağıdaki Docker kurulumuna bakın.
 
 ## Sunucuda çalıştırma (Docker)
 
@@ -109,13 +115,21 @@ docker compose up -d --build
 tailscale serve --bg http://localhost:5173
 ```
 
-Konteyner yalnızca sunucunun kendisine (`127.0.0.1:5173`) açılır ve en fazla 512 MB bellek kullanır. Erişim yine yalnızca Tailscale ağı üzerinden olur; internete port açılmaz. Ben kendi kurulumumda Oracle Cloud'un ücretsiz ARM sunucusunu kullanıyorum.
+Konteyner yalnızca sunucunun kendisine (`127.0.0.1:5173`) açılır ve en fazla 512 MB bellek kullanır. Erişim yine yalnızca Tailscale ağı üzerinden olur; internete port açılmaz. Senkron verisi ve Telegram ayarı `gt_data` adlı Docker volume'ünde durur. Ben kendi kurulumumda Oracle Cloud'un ücretsiz ARM sunucusunu kullanıyorum.
+
+Bilgisayardaki uygulamayı bu sunucuyla eşitlemek için proje klasörüne `gt.local.json` dosyası koyun (git'e girmez):
+
+```json
+{ "syncUrl": "https://<sunucu-adı>.<ağ-adı>.ts.net" }
+```
+
+Bu dosya varsa bilgisayardaki uygulama `/api` isteklerini sunucuya iletir. Yoksa API'yi kendisi çalıştırır ve verileri `./data` klasöründe tutar.
 
 ## Veri kaynakları ve sınırlamalar
 
 - Yahoo Finance verisi resmi olmayan bir API'den gelir. Gecikmeli olabilir, kişisel kullanım içindir ve Yahoo'nun kullanım şartlarına tabidir. Uygulama bu veriyi başkalarına dağıtmak için tasarlanmadı.
 - Yahoo, ABD gece seansının (20:00–04:00) mumlarını vermez, yalnızca anlık fiyatını verir.
-- Fiyat alarmları yalnızca uygulama açıkken çalışır.
+- Uygulama içindeki sesli alarm yalnızca uygulama açıkken çalışır. Telegram bildirimi için sunucunun çalışıyor olması gerekir.
 
 ## Yasal uyarı
 
