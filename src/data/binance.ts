@@ -141,10 +141,12 @@ export async function binanceSearch(query: string, limit = 10): Promise<SymbolDe
   const q = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!q) return [];
   const all = await loadAllSymbols();
+  // TradingView'daki "BTCUSD" → Binance'te asıl işlem gören BTCUSDT (BTC/USD çifti çok sığ).
+  const usdt = q.endsWith('USD') ? `${q}T` : null;
   const scored: { s: RawSymbol; score: number }[] = [];
   for (const s of all) {
     let score: number;
-    if (s.symbol === q) score = 0;
+    if (s.symbol === q || s.symbol === usdt) score = 0;
     else if (s.baseAsset === q) score = 1;
     else if (s.symbol.startsWith(q)) score = 2;
     else if (s.baseAsset.startsWith(q)) score = 3;
