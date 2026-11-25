@@ -13,7 +13,7 @@ import {
   type Interval,
   type Unit,
 } from '../data/intervals.ts';
-import type { SymbolDef } from '../data/types.ts';
+import { isBinance, type SymbolDef } from '../data/types.ts';
 import { aliasMatches, probeCandidates } from '../data/aliases.ts';
 import { yahooProbe, yahooSearch } from '../data/yahoo.ts';
 import { load, save } from '../store.ts';
@@ -98,9 +98,11 @@ export class Topbar {
     this.nameEl.textContent = def.name !== def.ticker ? def.name : '';
     document.title = `${displayTicker(def)} · Grafik Terminali`;
     clear(this.statusEl);
-    const live = def.source === 'BINANCE';
+    const live = isBinance(def.source);
     const text = live
-      ? 'Canlı · Binance'
+      ? def.source === 'BINANCEF'
+        ? 'Canlı · Binance vadesiz (7/24)'
+        : 'Canlı · Binance'
       : def.ticker.endsWith('.IS')
         ? 'BIST · ~15 dk gecikmeli'
         : 'Yahoo · gecikmeli olabilir';

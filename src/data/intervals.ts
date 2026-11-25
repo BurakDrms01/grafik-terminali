@@ -97,6 +97,8 @@ export const DEFAULT_FAVORITES: string[] = ['1m', '5m', '15m', '1h', '4h', '1D',
 // Binance: 1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M
 const BINANCE_TIME_NATIVE = [1, 60, 180, 300, 900, 1800, 3600, 7200, 14400, 21600, 28800, 43200];
 const BINANCE_DAY_NATIVE = [1, 3];
+/** Vadesiz piyasada saniye mumu yok */
+const FUTURES_TIME_NATIVE = BINANCE_TIME_NATIVE.filter((n) => n >= 60);
 // Yahoo: 1m 2m 5m 15m 30m 60m 1d 1wk 1mo  (90m bilerek yok: 60m'nin geçmişi çok daha uzun)
 const YAHOO_TIME_NATIVE = [60, 120, 300, 900, 1800, 3600];
 
@@ -114,13 +116,13 @@ function secondsToInterval(sec: number): Interval {
 export function chooseBase(target: Interval, source: Source): Interval | null {
   if (isTimeUnit(target.unit)) {
     const s = spanSeconds(target);
-    const natives = source === 'BINANCE' ? BINANCE_TIME_NATIVE : YAHOO_TIME_NATIVE;
+    const natives = source === 'BINANCE' ? BINANCE_TIME_NATIVE : source === 'BINANCEF' ? FUTURES_TIME_NATIVE : YAHOO_TIME_NATIVE;
     const fits = natives.filter((n) => s % n === 0);
     if (fits.length === 0) return null;
     return secondsToInterval(Math.max(...fits));
   }
   if (target.unit === 'day') {
-    const natives = source === 'BINANCE' ? BINANCE_DAY_NATIVE : [1];
+    const natives = source === 'YAHOO' ? [1] : BINANCE_DAY_NATIVE;
     const best = Math.max(...natives.filter((n) => target.span % n === 0));
     return { unit: 'day', span: best };
   }

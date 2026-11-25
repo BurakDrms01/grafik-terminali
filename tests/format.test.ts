@@ -23,4 +23,7 @@ test('kısa sembol gösterimi', () => {
   assert.equal(displayTicker({ source: 'YAHOO', ticker: 'USDTRY=X' }), 'USDTRY');
   assert.equal(displayTicker({ source: 'YAHOO', ticker: 'GC=F' }), 'GC');
   assert.equal(displayTicker({ source: 'BINANCE', ticker: 'BTCUSDT' }), 'BTCUSDT');
+  assert.equal(displayTicker({ source: 'BINANCEF', ticker: 'XAGUSDT' }), 'XAGUSDT.P');
+  assert.equal(displayTicker({ source: 'YAHOO', ticker: 'DX-Y.NYB' }), 'DXY');
+  assert.equal(displayTicker({ source: 'YAHOO', ticker: '^GSPC' }), 'GSPC');
 });

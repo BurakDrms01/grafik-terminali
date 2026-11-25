@@ -1,7 +1,7 @@
 // İzleme listesi ve alarmlar için ortak fiyat akışı.
-// Kripto: Binance WebSocket (anlık). Diğerleri: Yahoo, dakikada bir yoklama.
+// Kripto ve Binance vadesiz emtialar: Binance WebSocket (anlık). Diğerleri: Yahoo, dakikada bir yoklama.
 import { binanceTickers, openStream, wsMiniTickerToQuote } from './binance.ts';
-import { makeQuote, parseId, type Quote } from './types.ts';
+import { makeQuote, parseId, type Quote, type Source } from './types.ts';
 import { yahooQuote } from './yahoo.ts';
 
 const YAHOO_POLL_MS = 60000;
@@ -10,8 +10,11 @@ export class QuoteHub {
   private ids = new Set<string>();
   private quotes = new Map<string, Quote>();
   private listeners = new Set<(q: Quote) => void>();
-  private binanceKey = '';
-  private stopBinance: (() => void) | null = null;
+  /** Binance spot ve vadesiz piyasa akışları (ayrı sunucular) */
+  private readonly binance = {
+    BINANCE: { key: '', stop: null as (() => void) | null },
+    BINANCEF: { key: '', stop: null as (() => void) | null },
+  };
   private yahooTimer: ReturnType<typeof setInterval> | null = null;
 
   on(fn: (q: Quote) => void): () => void {
@@ -28,34 +31,8 @@ export class QuoteHub {
     const prev = this.ids;
     this.ids = new Set(ids);
 
-    const binance = [...this.ids]
-      .map(parseId)
-      .filter((p) => p?.source === 'BINANCE')
-      .map((p) => p!.ticker)
-      .sort();
-    const key = binance.join(',');
-    if (key !== this.binanceKey) {
-      this.binanceKey = key;
-      this.stopBinance?.();
-      this.stopBinance = null;
-      if (binance.length > 0) {
-        const refresh = () => {
-          binanceTickers(binance)
-            .then((qs) => qs.forEach((q) => this.push(q)))
-            .catch(() => {});
-        };
-        refresh();
-        const streams = binance.map((t) => `${t.toLowerCase()}@miniTicker`).join('/');
-        this.stopBinance = openStream(
-          `/stream?streams=${streams}`,
-          (msg) => {
-            const q = wsMiniTickerToQuote(msg);
-            if (q) this.push(q);
-          },
-          refresh,
-        );
-      }
-    }
+    this.watchBinance('BINANCE');
+    this.watchBinance('BINANCEF');
 
     const added = [...this.ids].filter((id) => !prev.has(id) && parseId(id)?.source === 'YAHOO');
     if (added.length > 0) void this.pollYahoo(added);
@@ -64,6 +41,38 @@ export class QuoteHub {
         void this.pollYahoo([...this.ids].filter((id) => parseId(id)?.source === 'YAHOO'));
       }, YAHOO_POLL_MS);
     }
+  }
+
+  private watchBinance(source: Extract<Source, 'BINANCE' | 'BINANCEF'>): void {
+    const tickers = [...this.ids]
+      .map(parseId)
+      .filter((p) => p?.source === source)
+      .map((p) => p!.ticker)
+      .sort();
+    const state = this.binance[source];
+    const key = tickers.join(',');
+    if (key === state.key) return;
+    state.key = key;
+    state.stop?.();
+    state.stop = null;
+    if (tickers.length === 0) return;
+    const futures = source === 'BINANCEF';
+    const refresh = () => {
+      binanceTickers(tickers, futures)
+        .then((qs) => qs.forEach((q) => this.push(q)))
+        .catch(() => {});
+    };
+    refresh();
+    const streams = tickers.map((t) => `${t.toLowerCase()}@miniTicker`).join('/');
+    state.stop = openStream(
+      `/stream?streams=${streams}`,
+      (msg) => {
+        const q = wsMiniTickerToQuote(msg, futures);
+        if (q) this.push(q);
+      },
+      refresh,
+      futures,
+    );
   }
 
   /** Açık grafikten gelen son fiyat: Yahoo sembollerinde yoklamayı beklemeden güncel tutar. */

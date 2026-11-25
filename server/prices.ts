@@ -1,5 +1,5 @@
-// Sunucu tarafında alarm kontrolü için anlık fiyat: Yahoo (BIST, ABD, döviz, emtia), Binance (kripto)
-// ve hesaplanan semboller (gram altın gibi).
+// Sunucu tarafında alarm kontrolü için anlık fiyat: Yahoo (BIST, ABD, döviz, emtia), Binance (kripto,
+// vadesiz emtialar) ve hesaplanan semboller (gram altın gibi).
 import { syntheticOf } from '../src/data/synthetic.ts';
 import { parseId } from '../src/data/types.ts';
 
@@ -53,11 +53,19 @@ export async function binancePrice(ticker: string): Promise<number | null> {
   return null;
 }
 
+/** Binance vadesiz piyasa (altın, gümüş, petrol… 7/24) son fiyatı. */
+export async function binanceFuturesPrice(ticker: string): Promise<number | null> {
+  const j = (await getJson(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${encodeURIComponent(ticker)}`)) as { price?: string };
+  const p = Number(j.price);
+  return Number.isFinite(p) ? p : null;
+}
+
 /** Uygulamadaki sembol kimliğine ("YAHOO:AAPL", "BINANCE:BTCUSDT") göre güncel fiyat. */
 export async function symbolPrice(symbolId: string, extended: boolean): Promise<number | null> {
   const p = parseId(symbolId);
   if (!p) return null;
   if (p.source === 'BINANCE') return binancePrice(p.ticker);
+  if (p.source === 'BINANCEF') return binanceFuturesPrice(p.ticker);
   const syn = syntheticOf(p.ticker);
   if (syn) {
     const [a, b] = await Promise.all([yahooPrice(syn.a, false), yahooPrice(syn.b, false)]);

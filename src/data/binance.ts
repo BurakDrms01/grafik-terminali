@@ -1,21 +1,27 @@
 // Binance açık piyasa verisi: anahtar gerekmez, anlık. Tarayıcıdan doğrudan çağrılır.
+// Spot (kripto) ve vadesiz piyasa (futures: altın, gümüş, petrol gibi emtialar 7/24).
 import { binanceIntervalString, type Interval } from './intervals.ts';
 import { makeId, makeQuote, type Bar, type Quote, type SymbolDef } from './types.ts';
 
 const REST_HOSTS = ['https://api.binance.com', 'https://data-api.binance.vision'];
 const WS_HOSTS = ['wss://stream.binance.com:9443', 'wss://data-stream.binance.vision'];
+const FUTURES_REST_HOSTS = ['https://fapi.binance.com'];
+const FUTURES_WS_HOSTS = ['wss://fstream.binance.com/market'];
 export const KLINE_LIMIT = 1000;
 
 class BinanceApiError extends Error {}
 
 let restHost = 0;
 
+/** "/fapi/…" yolları vadesiz piyasa sunucusuna gider. */
 async function rest(path: string): Promise<unknown> {
+  const futures = path.startsWith('/fapi/');
+  const hosts = futures ? FUTURES_REST_HOSTS : REST_HOSTS;
   let lastError: unknown = null;
-  for (let attempt = 0; attempt < REST_HOSTS.length; attempt++) {
-    const idx = (restHost + attempt) % REST_HOSTS.length;
+  for (let attempt = 0; attempt < hosts.length; attempt++) {
+    const idx = futures ? attempt : (restHost + attempt) % hosts.length;
     try {
-      const res = await fetch(REST_HOSTS[idx] + path);
+      const res = await fetch(hosts[idx] + path);
       if (res.status === 451 || res.status === 403) {
         lastError = new Error(`Binance erişimi engellendi (${res.status})`);
         continue; // bölge engeli: yedek sunucuyu dene
@@ -30,7 +36,7 @@ async function rest(path: string): Promise<unknown> {
         }
         throw new BinanceApiError(msg);
       }
-      restHost = idx;
+      if (!futures) restHost = idx;
       return await res.json();
     } catch (e) {
       if (e instanceof BinanceApiError) throw e;
@@ -82,9 +88,26 @@ function toMeta(s: RawSymbol): BinanceSymbolMeta {
   };
 }
 
-export async function binanceSymbolMeta(ticker: string): Promise<BinanceSymbolMeta> {
-  const cached = metaCache.get(ticker);
+let futuresSymbols: Promise<RawSymbol[]> | null = null;
+
+export async function binanceSymbolMeta(ticker: string, futures = false): Promise<BinanceSymbolMeta> {
+  const key = futures ? `F:${ticker}` : ticker;
+  const cached = metaCache.get(key);
   if (cached) return cached;
+  if (futures) {
+    // Vadesiz piyasada tek sembol sorgusu yok: liste bir kez indirilir.
+    futuresSymbols ??= (rest('/fapi/v1/exchangeInfo') as Promise<{ symbols: RawSymbol[] }>)
+      .then((j) => j.symbols)
+      .catch((e) => {
+        futuresSymbols = null;
+        throw e;
+      });
+    const s = (await futuresSymbols).find((x) => x.symbol === ticker);
+    if (!s) throw new Error(`Binance vadeli piyasada ${ticker} bulunamadı`);
+    const meta = toMeta(s);
+    metaCache.set(key, meta);
+    return meta;
+  }
   const json = (await rest(
     `/api/v3/exchangeInfo?symbol=${encodeURIComponent(ticker)}&showPermissionSets=false`,
   )) as { symbols?: RawSymbol[] };
@@ -149,11 +172,11 @@ function klineToBar(k: RawKline): Bar {
   return { timestamp: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] };
 }
 
-/** endTime verilirse o andan (dahil) önceki mumlar. */
+/** endTime verilirse o andan (dahil) önceki mumlar. futures: vadesiz piyasa. */
 export async function binanceKlines(
   ticker: string,
   base: Interval,
-  opts: { endTime?: number; limit?: number } = {},
+  opts: { endTime?: number; limit?: number; futures?: boolean } = {},
 ): Promise<Bar[]> {
   const params = new URLSearchParams({
     symbol: ticker,
@@ -161,7 +184,7 @@ export async function binanceKlines(
     limit: String(opts.limit ?? KLINE_LIMIT),
   });
   if (opts.endTime !== undefined) params.set('endTime', String(opts.endTime));
-  const rows = (await rest(`/api/v3/klines?${params}`)) as RawKline[];
+  const rows = (await rest(`${opts.futures ? '/fapi/v1' : '/api/v3'}/klines?${params}`)) as RawKline[];
   return rows.map(klineToBar);
 }
 
@@ -173,8 +196,15 @@ interface RawMiniTicker {
 }
 
 /** Son 24 saatlik değişimle anlık fiyatlar. */
-export async function binanceTickers(tickers: string[]): Promise<Quote[]> {
+export async function binanceTickers(tickers: string[], futures = false): Promise<Quote[]> {
   if (tickers.length === 0) return [];
+  if (futures) {
+    // Vadesiz piyasada çoklu sembol sorgusu yok: sembol başına bir istek.
+    const rows = await Promise.all(
+      tickers.map((t) => rest(`/fapi/v1/ticker/24hr?symbol=${encodeURIComponent(t)}`) as Promise<RawMiniTicker>),
+    );
+    return rows.map((r) => makeQuote(makeId('BINANCEF', r.symbol), +r.lastPrice, +r.openPrice, r.closeTime));
+  }
   const rows = (await rest(
     `/api/v3/ticker/24hr?symbols=${encodeURIComponent(JSON.stringify(tickers))}&type=MINI`,
   )) as RawMiniTicker[];
@@ -189,7 +219,9 @@ export function openStream(
   path: string,
   onMessage: (data: unknown) => void,
   onReconnect?: () => void,
+  futures = false,
 ): () => void {
+  const hosts = futures ? FUTURES_WS_HOSTS : WS_HOSTS;
   let ws: WebSocket | null = null;
   let closed = false;
   let failures = 0;
@@ -199,7 +231,7 @@ export function openStream(
 
   const connect = () => {
     if (closed) return;
-    const sock = new WebSocket(WS_HOSTS[hostIdx % WS_HOSTS.length] + path);
+    const sock = new WebSocket(hosts[hostIdx % hosts.length] + path);
     ws = sock;
     sock.onopen = () => {
       failures = 0;
@@ -245,8 +277,8 @@ interface RawWsMiniTicker {
   data?: { s: string; c: string; o: string; E: number };
 }
 
-export function wsMiniTickerToQuote(msg: unknown): Quote | null {
+export function wsMiniTickerToQuote(msg: unknown, futures = false): Quote | null {
   const d = (msg as RawWsMiniTicker)?.data;
   if (!d) return null;
-  return makeQuote(makeId('BINANCE', d.s), +d.c, +d.o, d.E);
+  return makeQuote(makeId(futures ? 'BINANCEF' : 'BINANCE', d.s), +d.c, +d.o, d.E);
 }

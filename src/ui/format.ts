@@ -50,6 +50,7 @@ export type Kind = 'bist' | 'crypto' | 'fx' | 'us' | 'commodity';
 /** Varlık türü: izleme listesindeki renkli nokta için. */
 export function kindOf(def: Pick<SymbolDef, 'ticker' | 'source'>): Kind {
   if (def.source === 'YAHOO' && syntheticOf(def.ticker)) return 'commodity';
+  if (def.source === 'BINANCEF') return 'commodity';
   if (def.source === 'BINANCE' || /-(USD|EUR|TRY)$/.test(def.ticker)) return 'crypto';
   if (def.ticker.endsWith('.IS')) return 'bist';
   if (def.ticker.endsWith('=X')) return 'fx';
@@ -67,8 +68,11 @@ export const KIND_LABEL: Record<Kind, string> = {
 
 /** Kısa gösterim: "THYAO.IS" → "THYAO", "USDTRY=X" → "USDTRY", "GC=F" → "GC". */
 export function displayTicker(def: Pick<SymbolDef, 'ticker' | 'source'>): string {
+  // Binance vadesiz sözleşmeler TradingView'daki gibi ".P" ile: "XAGUSDT.P"
+  if (def.source === 'BINANCEF') return `${def.ticker}.P`;
   if (def.source !== 'YAHOO') return def.ticker;
-  return def.ticker.replace(/\.IS$/, '').replace(/=X$/, '').replace(/=F$/, '');
+  if (def.ticker === 'DX-Y.NYB') return 'DXY';
+  return def.ticker.replace(/^\^/, '').replace(/\.IS$/, '').replace(/=X$/, '').replace(/=F$/, '');
 }
 
 /**

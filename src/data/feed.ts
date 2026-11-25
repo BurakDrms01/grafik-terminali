@@ -27,7 +27,7 @@ import {
 import { heikinAshi } from './heikin.ts';
 import { addRegularSessions, extendedHours, isOvernightSession, type RegularSessions } from './session.ts';
 import { localDay } from './tz.ts';
-import type { Bar, Source, SymbolDef } from './types.ts';
+import { isBinance, type Bar, type Source, type SymbolDef } from './types.ts';
 import { normalizeBars } from './yahooParse.ts';
 import { yahooHistory, yahooMeta, yahooRecent } from './yahoo.ts';
 
@@ -95,13 +95,13 @@ export function periodToInterval(p: Period): Interval {
 
 /** Sembol için ondalık basamak, saat dilimi gibi bilgileri toplar (grafiğe vermeden önce). */
 export async function resolveSymbol(def: SymbolDef): Promise<ChartSymbol> {
-  if (def.source === 'BINANCE') {
-    const m = await binanceSymbolMeta(def.ticker);
+  if (isBinance(def.source)) {
+    const m = await binanceSymbolMeta(def.ticker, def.source === 'BINANCEF');
     return {
       ticker: def.id,
       pricePrecision: m.pricePrecision,
       volumePrecision: m.volumePrecision,
-      source: 'BINANCE',
+      source: def.source,
       rawTicker: def.ticker,
       name: def.name || `${m.baseAsset} / ${m.quoteAsset}`,
       exchange: def.exchange || 'Binance',
@@ -175,7 +175,7 @@ export async function loadSeries(def: SymbolDef, target: Interval, minStart?: nu
     let end: number | undefined;
     const pages = Math.max(pagesFor(target, base), 1);
     for (let i = 0; i < MAX_PAGES; i++) {
-      const page = await binanceKlines(symbol.rawTicker, base, { endTime: end });
+      const page = await binanceKlines(symbol.rawTicker, base, { endTime: end, futures: symbol.source === 'BINANCEF' });
       baseBars = page.concat(baseBars);
       if (page.length < KLINE_LIMIT) break;
       const enough = minStart !== undefined ? page[0].timestamp <= minStart : i + 1 >= pages;
@@ -187,7 +187,7 @@ export async function loadSeries(def: SymbolDef, target: Interval, minStart?: nu
     target,
     base,
     timeZone: symbol.timeZone,
-    dayStart: symbol.source === 'BINANCE' ? 'midnight' : 'firstBar',
+    dayStart: isBinance(symbol.source) ? 'midnight' : 'firstBar',
   });
   return { symbol, bars };
 }
@@ -306,7 +306,7 @@ export class ChartFeed {
     let exhausted = false;
     const pages = pagesFor(s.target, s.base);
     for (let i = 0; i < pages && this.session === s; i++) {
-      const page = await binanceKlines(s.symbol.rawTicker, s.base, { endTime: end });
+      const page = await binanceKlines(s.symbol.rawTicker, s.base, { endTime: end, futures: s.symbol.source === 'BINANCEF' });
       all = page.concat(all);
       if (page.length < KLINE_LIMIT) {
         exhausted = true;
@@ -351,7 +351,7 @@ export class ChartFeed {
       symbol,
       target,
       base,
-      dayStart: symbol.source === 'BINANCE' ? 'midnight' : 'firstBar',
+      dayStart: isBinance(symbol.source) ? 'midnight' : 'firstBar',
       baseBars: [],
       oldest: null,
       newest: null,
@@ -463,8 +463,9 @@ export class ChartFeed {
       if (lastBase) this.events.onPrice(s.symbol.ticker, lastBase.close);
     };
 
-    if (s.symbol.source === 'BINANCE') {
+    if (isBinance(s.symbol.source)) {
       const ticker = s.symbol.rawTicker;
+      const futures = s.symbol.source === 'BINANCEF';
       s.stop = openStream(
         `/ws/${ticker.toLowerCase()}@kline_${binanceIntervalString(s.base)}`,
         (msg) => {
@@ -473,8 +474,9 @@ export class ChartFeed {
         },
         () => {
           // Bağlantı koptuysa aradaki mumları doldur.
-          binanceKlines(ticker, s.base, { limit: 200 }).then(push).catch(() => {});
+          binanceKlines(ticker, s.base, { limit: 200, futures }).then(push).catch(() => {});
         },
+        futures,
       );
     } else {
       const tick = () => {

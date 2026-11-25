@@ -1,4 +1,10 @@
-export type Source = 'BINANCE' | 'YAHOO';
+/** BINANCEF: Binance vadesiz (perpetual) piyasası: altın, gümüş, petrol gibi emtialar 7/24. */
+export type Source = 'BINANCE' | 'BINANCEF' | 'YAHOO';
+
+/** Binance'ten (spot ya da vadesiz) gelen, anlık akışı olan kaynak mı */
+export function isBinance(source: Source): boolean {
+  return source === 'BINANCE' || source === 'BINANCEF';
+}
 
 /** Uygulamadaki her sembolün tekil kimliği: "BINANCE:BTCUSDT" ya da "YAHOO:THYAO.IS". */
 export interface SymbolDef {
@@ -40,7 +46,7 @@ export function parseId(id: string): { source: Source; ticker: string } | null {
   if (i < 0) return null;
   const source = id.slice(0, i);
   const ticker = id.slice(i + 1);
-  if ((source !== 'BINANCE' && source !== 'YAHOO') || ticker.length === 0) return null;
+  if ((source !== 'BINANCE' && source !== 'BINANCEF' && source !== 'YAHOO') || ticker.length === 0) return null;
   return { source, ticker };
 }
 

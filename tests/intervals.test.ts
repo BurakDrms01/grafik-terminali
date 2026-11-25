@@ -23,6 +23,9 @@ test('Binance: doğal dilim varsa onu, yoksa tam bölen en büyüğünü seçer'
   assert.equal(k(chooseBase(P('4h'), 'BINANCE')), '4h');
   assert.equal(k(chooseBase(P('3h'), 'BINANCE')), '1h');
   assert.equal(k(chooseBase(P('5s'), 'BINANCE')), '1s');
+  // Vadesiz piyasada saniye mumu yok
+  assert.equal(chooseBase(P('5s'), 'BINANCEF'), null);
+  assert.equal(k(chooseBase(P('4h'), 'BINANCEF')), '4h');
   assert.equal(k(chooseBase(P('7m'), 'BINANCE')), '1m');
   assert.equal(k(chooseBase(P('3D'), 'BINANCE')), '3D');
   assert.equal(k(chooseBase(P('2D'), 'BINANCE')), '1D');
