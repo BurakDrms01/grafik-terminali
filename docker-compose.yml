@@ -1,0 +1,11 @@
+# Sunucuda çalıştırma: docker compose up -d --build
+# Port yalnızca sunucunun kendisine (127.0.0.1) açılır; telefondan erişim Tailscale "serve" ile.
+services:
+  grafik_terminali:
+    build: .
+    container_name: grafik_terminali
+    restart: unless-stopped
+    init: true
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:5173:5173"

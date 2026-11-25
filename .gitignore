@@ -1,0 +1,12 @@
+# Bağımlılıklar ve derleme çıktısı
+node_modules/
+dist/
+.vite/
+
+# Yerel araç ayarları ve gizli dosyalar
+.claude/
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db

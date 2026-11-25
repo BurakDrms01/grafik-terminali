@@ -1,0 +1,99 @@
+// İzleme listesi ve alarmlar için ortak fiyat akışı.
+// Kripto: Binance WebSocket (anlık). Diğerleri: Yahoo, dakikada bir yoklama.
+import { binanceTickers, openStream, wsMiniTickerToQuote } from './binance.ts';
+import { makeQuote, parseId, type Quote } from './types.ts';
+import { yahooQuote } from './yahoo.ts';
+
+const YAHOO_POLL_MS = 60000;
+
+export class QuoteHub {
+  private ids = new Set<string>();
+  private quotes = new Map<string, Quote>();
+  private listeners = new Set<(q: Quote) => void>();
+  private binanceKey = '';
+  private stopBinance: (() => void) | null = null;
+  private yahooTimer: ReturnType<typeof setInterval> | null = null;
+
+  on(fn: (q: Quote) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  get(id: string): Quote | undefined {
+    return this.quotes.get(id);
+  }
+
+  /** Takip edilecek sembolleri ayarlar (izleme listesi + alarmı olanlar + açık grafik). */
+  setSymbols(ids: string[]): void {
+    const prev = this.ids;
+    this.ids = new Set(ids);
+
+    const binance = [...this.ids]
+      .map(parseId)
+      .filter((p) => p?.source === 'BINANCE')
+      .map((p) => p!.ticker)
+      .sort();
+    const key = binance.join(',');
+    if (key !== this.binanceKey) {
+      this.binanceKey = key;
+      this.stopBinance?.();
+      this.stopBinance = null;
+      if (binance.length > 0) {
+        const refresh = () => {
+          binanceTickers(binance)
+            .then((qs) => qs.forEach((q) => this.push(q)))
+            .catch(() => {});
+        };
+        refresh();
+        const streams = binance.map((t) => `${t.toLowerCase()}@miniTicker`).join('/');
+        this.stopBinance = openStream(
+          `/stream?streams=${streams}`,
+          (msg) => {
+            const q = wsMiniTickerToQuote(msg);
+            if (q) this.push(q);
+          },
+          refresh,
+        );
+      }
+    }
+
+    const added = [...this.ids].filter((id) => !prev.has(id) && parseId(id)?.source === 'YAHOO');
+    if (added.length > 0) void this.pollYahoo(added);
+    if (this.yahooTimer === null) {
+      this.yahooTimer = setInterval(() => {
+        void this.pollYahoo([...this.ids].filter((id) => parseId(id)?.source === 'YAHOO'));
+      }, YAHOO_POLL_MS);
+    }
+  }
+
+  /** Açık grafikten gelen son fiyat: Yahoo sembollerinde yoklamayı beklemeden güncel tutar. */
+  ingestPrice(id: string, price: number): void {
+    if (!this.ids.has(id)) return;
+    const prev = this.quotes.get(id);
+    if (prev && prev.price === price) return;
+    this.push(makeQuote(id, price, prev?.prevClose ?? null, Date.now()));
+  }
+
+  private async pollYahoo(ids: string[]): Promise<void> {
+    await Promise.all(
+      ids.map(async (id) => {
+        const p = parseId(id);
+        if (!p) return;
+        try {
+          const { quote } = await yahooQuote(p.ticker);
+          if (quote) this.push(quote);
+        } catch {
+          /* tek sembolün hatası diğerlerini durdurmasın */
+        }
+      }),
+    );
+  }
+
+  private push(q: Quote): void {
+    if (!this.ids.has(q.id)) return;
+    const prev = this.quotes.get(q.id);
+    this.quotes.set(q.id, q);
+    if (prev && prev.price === q.price && prev.prevClose === q.prevClose) return;
+    this.listeners.forEach((fn) => fn(q));
+  }
+}
