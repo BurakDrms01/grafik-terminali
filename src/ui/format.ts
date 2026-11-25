@@ -51,6 +51,10 @@ export type Kind = 'bist' | 'crypto' | 'fx' | 'us' | 'commodity';
 export function kindOf(def: Pick<SymbolDef, 'ticker' | 'source'>): Kind {
   if (def.source === 'YAHOO' && syntheticOf(def.ticker)) return 'commodity';
   if (def.source === 'BINANCEF') return 'commodity';
+  if (def.source === 'OANDA') {
+    if (/^(XAU|XAG|XPT|XPD|XCU|WTICO|BCO|NATGAS|CORN|WHEAT|SOYBN|SUGAR)_/.test(def.ticker)) return 'commodity';
+    return /^[A-Z]{3}_[A-Z]{3}$/.test(def.ticker) ? 'fx' : 'us';
+  }
   if (def.source === 'BINANCE' || /-(USD|EUR|TRY)$/.test(def.ticker)) return 'crypto';
   if (def.ticker.endsWith('.IS')) return 'bist';
   if (def.ticker.endsWith('=X')) return 'fx';
@@ -70,6 +74,8 @@ export const KIND_LABEL: Record<Kind, string> = {
 export function displayTicker(def: Pick<SymbolDef, 'ticker' | 'source'>): string {
   // Binance vadesiz sözleşmeler TradingView'daki gibi ".P" ile: "XAGUSDT.P"
   if (def.source === 'BINANCEF') return `${def.ticker}.P`;
+  // OANDA TradingView'daki gibi alt çizgisiz: "XAG_USD" → "XAGUSD", "NAS100_USD" → "NAS100USD"
+  if (def.source === 'OANDA') return def.ticker.replace(/_/g, '');
   if (def.source !== 'YAHOO') return def.ticker;
   if (def.ticker === 'DX-Y.NYB') return 'DXY';
   return def.ticker.replace(/^\^/, '').replace(/\.IS$/, '').replace(/=X$/, '').replace(/=F$/, '');

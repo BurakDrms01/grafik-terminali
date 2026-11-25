@@ -15,10 +15,12 @@ import {
 } from '../data/intervals.ts';
 import { isBinance, type SymbolDef } from '../data/types.ts';
 import { aliasMatches, probeCandidates } from '../data/aliases.ts';
+import { oandaConfigured, oandaSearch } from '../data/oanda.ts';
 import { yahooProbe, yahooSearch } from '../data/yahoo.ts';
 import { load, save } from '../store.ts';
 import { clear, h, isModalOpen, isTyping, modal, popover, toast } from './dom.ts';
 import { displayTicker, KIND_LABEL, kindOf } from './format.ts';
+import { openOandaDialog } from './oanda.ts';
 
 export interface TopbarDeps {
   getSymbol(): SymbolDef;
@@ -98,11 +100,13 @@ export class Topbar {
     this.nameEl.textContent = def.name !== def.ticker ? def.name : '';
     document.title = `${displayTicker(def)} · Grafik Terminali`;
     clear(this.statusEl);
-    const live = isBinance(def.source);
+    const live = isBinance(def.source) || def.source === 'OANDA';
     const text = live
       ? def.source === 'BINANCEF'
         ? 'Canlı · Binance vadesiz (7/24)'
-        : 'Canlı · Binance'
+        : def.source === 'OANDA'
+          ? 'Canlı · OANDA'
+          : 'Canlı · Binance'
       : def.ticker.endsWith('.IS')
         ? 'BIST · ~15 dk gecikmeli'
         : 'Yahoo · gecikmeli olabilir';
@@ -236,9 +240,10 @@ export class Topbar {
     const status = h('div', { class: 'search-status', role: 'status' });
     const chips = h('div', { class: 'search-chips', role: 'tablist' });
     const results = h('div', { class: 'search-results', role: 'listbox' });
+    const oandaBar = h('div', { class: 'search-oanda' });
     const m = modal(
       opts.title ?? 'Sembol ara',
-      h('div', { class: 'search-box' }, h('div', { class: 'search-field' }, input, clearBtn), chips, status, results),
+      h('div', { class: 'search-box' }, h('div', { class: 'search-field' }, input, clearBtn), chips, oandaBar, status, results),
       { wide: true },
     );
 
@@ -333,20 +338,23 @@ export class Topbar {
       }
       status.textContent = 'Aranıyor…';
       const aliases = aliasMatches(q);
-      const [y, b] = await Promise.allSettled([yahooSearch(q), binanceSearch(q, 8)]);
+      const [y, b, o] = await Promise.allSettled([yahooSearch(q), binanceSearch(q, 8), oandaSearch(q)]);
       if (my !== seq) return;
       let yItems = y.status === 'fulfilled' ? y.value : [];
       const bItems = b.status === 'fulfilled' ? b.value : [];
+      // OANDA bağlıysa TradingView'daki spot/CFD karşılıkları en üstte.
+      const oItems = o.status === 'fulfilled' ? o.value : [];
       // Arama dizininde yoksa sembolü doğrudan dene (BIST, ABD, döviz, vadeli).
-      if (yItems.length === 0 && aliases.length === 0 && bItems.length === 0) {
+      if (yItems.length === 0 && aliases.length === 0 && bItems.length === 0 && oItems.length === 0) {
         const probed = await yahooProbe(probeCandidates(q)).catch(() => []);
         if (my !== seq) return;
         yItems = probed;
       }
-      const merged = [...aliases, ...yItems.filter((d) => !aliases.some((a) => a.ticker === d.ticker))];
+      const merged = [...oItems, ...aliases, ...yItems.filter((d) => !aliases.some((a) => a.ticker === d.ticker))];
       const qu = q.toUpperCase();
       const cryptoFirst =
         aliases.length === 0 &&
+        !oItems.some((d) => d.type !== 'Kripto') &&
         bItems.length > 0 &&
         (bItems[0].ticker === qu || bItems[0].name.startsWith(`${qu} /`)) &&
         !merged.some((d) => displayTicker(d) === qu && d.type !== 'Vadeli' && d.type !== 'Kripto');
@@ -399,6 +407,25 @@ export class Topbar {
         render();
       }
     });
+    // OANDA bağlantısı: bağlı değilse görünür bir düğme, bağlıysa küçük bir durum yazısı.
+    const renderOandaBar = async () => {
+      const on = await oandaConfigured();
+      clear(oandaBar);
+      const btn = h('button', {
+        type: 'button',
+        class: on ? 'oanda-pill on' : 'oanda-pill',
+        text: on ? '✓ OANDA bağlı' : 'OANDA’yı bağla: TradingView’daki spot altın, gümüş, forex ve endeks fiyatları',
+        title: on ? 'OANDA bağlantısı' : 'OANDA API anahtarını ekle',
+      });
+      btn.addEventListener('click', () =>
+        openOandaDialog(() => {
+          void renderOandaBar();
+          void run();
+        }),
+      );
+      oandaBar.append(btn);
+    };
+    void renderOandaBar();
     renderChips();
     input.focus();
     // İlk harfle açıldığında imleç sona gelsin ("btc" yazınca "tcb" olmasın).

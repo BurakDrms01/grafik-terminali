@@ -25,6 +25,8 @@ import {
   type Interval,
 } from './intervals.ts';
 import { heikinAshi } from './heikin.ts';
+import { OANDA_LIMIT, oandaCandles, oandaInstrument } from './oanda.ts';
+import { instrumentName } from './oandaLogic.ts';
 import { addRegularSessions, extendedHours, isOvernightSession, type RegularSessions } from './session.ts';
 import { localDay } from './tz.ts';
 import { isBinance, type Bar, type Source, type SymbolDef } from './types.ts';
@@ -81,6 +83,8 @@ export interface SessionShading {
 const TARGET_BARS = 600;
 const MAX_PAGES = 10;
 const YAHOO_LIVE_MS = 30000;
+/** OANDA canlı fiyatı: sunucu üzerinden kısa aralıkla yoklanır */
+const OANDA_LIVE_MS = 2000;
 /** Canlı güncellemede yeniden birleştirilecek kuyruk (en büyük kova: 1439 adet 1dk mum). */
 const TAIL_MARGIN = 1500;
 
@@ -109,6 +113,21 @@ export async function resolveSymbol(def: SymbolDef): Promise<ChartSymbol> {
       hasPrePost: false,
     };
   }
+  if (def.source === 'OANDA') {
+    const i = await oandaInstrument(def.ticker);
+    return {
+      ticker: def.id,
+      pricePrecision: i.precision,
+      volumePrecision: 0,
+      source: 'OANDA',
+      rawTicker: def.ticker,
+      name: def.name || instrumentName(i),
+      exchange: 'OANDA',
+      // Forex günü New York'a göre işler (günlük mum 17:00'de kapanır).
+      timeZone: 'America/New_York',
+      hasPrePost: false,
+    };
+  }
   const m = await yahooMeta(def.ticker);
   return {
     ticker: def.id,
@@ -129,10 +148,28 @@ function bucketFactor(target: Interval, base: Interval): number {
   return 1;
 }
 
-function pagesFor(target: Interval, base: Interval): number {
+function pagesFor(target: Interval, base: Interval, limit = KLINE_LIMIT): number {
   const f = bucketFactor(target, base);
   if (f <= 1) return 1;
-  return Math.max(1, Math.min(MAX_PAGES, Math.ceil((TARGET_BARS * f) / KLINE_LIMIT)));
+  return Math.max(1, Math.min(MAX_PAGES, Math.ceil((TARGET_BARS * f) / limit)));
+}
+
+/** Sayfalı kaynaklarda (Binance, OANDA) bir sayfadaki en fazla mum */
+function pageLimit(source: Source): number {
+  return source === 'OANDA' ? OANDA_LIMIT : KLINE_LIMIT;
+}
+
+/** Binance ve OANDA: end anından (dahil) önceki bir sayfa mum; end yoksa en yeniler. */
+function fetchPage(symbol: ChartSymbol, base: Interval, end: number | undefined): Promise<Bar[]> {
+  if (symbol.source === 'OANDA') {
+    return oandaCandles(symbol.rawTicker, base, { before: end === undefined ? undefined : end + 1 });
+  }
+  return binanceKlines(symbol.rawTicker, base, { endTime: end, futures: symbol.source === 'BINANCEF' });
+}
+
+/** 7/24 ya da 24/5 piyasalarda gün gece yarısı başlar; borsalarda günün ilk mumuyla. */
+function dayStartOf(source: Source): DayStart {
+  return isBinance(source) || source === 'OANDA' ? 'midnight' : 'firstBar';
 }
 
 function lowerBound(bars: Bar[], ts: number): number {
@@ -173,11 +210,12 @@ export async function loadSeries(def: SymbolDef, target: Interval, minStart?: nu
     baseBars = (await yahooHistory(symbol.rawTicker, base, symbol.timeZone, symbol.hasPrePost && extendedHours())).bars;
   } else {
     let end: number | undefined;
-    const pages = Math.max(pagesFor(target, base), 1);
+    const limit = pageLimit(symbol.source);
+    const pages = Math.max(pagesFor(target, base, limit), 1);
     for (let i = 0; i < MAX_PAGES; i++) {
-      const page = await binanceKlines(symbol.rawTicker, base, { endTime: end, futures: symbol.source === 'BINANCEF' });
+      const page = await fetchPage(symbol, base, end);
       baseBars = page.concat(baseBars);
-      if (page.length < KLINE_LIMIT) break;
+      if (page.length < limit) break;
       const enough = minStart !== undefined ? page[0].timestamp <= minStart : i + 1 >= pages;
       if (enough) break;
       end = page[0].timestamp - 1;
@@ -187,7 +225,7 @@ export async function loadSeries(def: SymbolDef, target: Interval, minStart?: nu
     target,
     base,
     timeZone: symbol.timeZone,
-    dayStart: isBinance(symbol.source) ? 'midnight' : 'firstBar',
+    dayStart: dayStartOf(symbol.source),
   });
   return { symbol, bars };
 }
@@ -297,18 +335,20 @@ export class ChartFeed {
     });
   }
 
-  private async loadBinancePages(
+  /** Sayfalı kaynaklardan (Binance, OANDA) eskiye doğru mum yükler. */
+  private async loadPages(
     s: Session,
     endTime: number | undefined,
   ): Promise<{ bars: Bar[]; exhausted: boolean }> {
     let all: Bar[] = [];
     let end = endTime;
     let exhausted = false;
-    const pages = pagesFor(s.target, s.base);
+    const limit = pageLimit(s.symbol.source);
+    const pages = pagesFor(s.target, s.base, limit);
     for (let i = 0; i < pages && this.session === s; i++) {
-      const page = await binanceKlines(s.symbol.rawTicker, s.base, { endTime: end, futures: s.symbol.source === 'BINANCEF' });
+      const page = await fetchPage(s.symbol, s.base, end);
       all = page.concat(all);
-      if (page.length < KLINE_LIMIT) {
+      if (page.length < limit) {
         exhausted = true;
         break;
       }
@@ -351,7 +391,7 @@ export class ChartFeed {
       symbol,
       target,
       base,
-      dayStart: isBinance(symbol.source) ? 'midnight' : 'firstBar',
+      dayStart: dayStartOf(symbol.source),
       baseBars: [],
       oldest: null,
       newest: null,
@@ -371,7 +411,7 @@ export class ChartFeed {
         this.emitOvernight(s, chart.meta.fullDayPrice);
         s.exhausted = true;
       } else {
-        const r = await this.loadBinancePages(s, undefined);
+        const r = await this.loadPages(s, undefined);
         s.baseBars = r.bars;
         s.exhausted = r.exhausted;
       }
@@ -403,7 +443,7 @@ export class ChartFeed {
       return;
     }
     try {
-      const r = await this.loadBinancePages(s, s.baseBars[0].timestamp - 1);
+      const r = await this.loadPages(s, s.baseBars[0].timestamp - 1);
       if (this.session !== s || !this.isCurrent(p.symbol, p.period)) return;
       s.baseBars = r.bars.concat(s.baseBars);
       s.exhausted = r.exhausted;
@@ -478,6 +518,12 @@ export class ChartFeed {
         },
         futures,
       );
+    } else if (s.symbol.source === 'OANDA') {
+      const ticker = s.symbol.rawTicker;
+      const timer = setInterval(() => {
+        oandaCandles(ticker, s.base, { count: 3 }).then(push).catch(() => {});
+      }, OANDA_LIVE_MS);
+      s.stop = () => clearInterval(timer);
     } else {
       const tick = () => {
         yahooRecent(s.symbol.rawTicker, s.base, s.extended)

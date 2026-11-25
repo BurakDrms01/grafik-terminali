@@ -1,14 +1,16 @@
-// Uygulamanın sunucu API'si (/api/*): cihazlar arası senkron ve Telegram alarm ayarları.
+// Uygulamanın sunucu API'si (/api/*): cihazlar arası senkron, Telegram alarm ayarları ve OANDA fiyatları.
 //
 // Güvenlik:
 // - Her istekte "X-GT-Client: 1" başlığı gerekir. Tarayıcılar başka bir sitenin bu başlıkla istek
 //   atmasına ancak CORS izniyle olanak verir; Vite yalnızca localhost kaynaklarına izin verdiği için
 //   açık olan başka bir web sayfası bu API'yi kullanamaz.
 // - Sunucu yalnızca localhost'ta dinler; dışarıdan erişim Tailscale ağıyla sınırlıdır.
-// - Telegram anahtarı hiçbir yanıtta yer almaz.
+// - Telegram ve OANDA anahtarları hiçbir yanıtta yer almaz.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isSyncedKey, keepServerTriggers } from '../src/data/syncLogic.ts';
 import { AlertWorker } from './alerts.ts';
+import { Oanda } from './oanda.ts';
+import { symbolPrice } from './prices.ts';
 import { SyncStore } from './store.ts';
 import { Telegram } from './telegram.ts';
 
@@ -69,7 +71,10 @@ function appUrlFrom(req: IncomingMessage): string {
 export function createApi(o: ApiOptions): Api {
   const store = new SyncStore(o.dataDir);
   const telegram = new Telegram(o.dataDir);
-  const worker = new AlertWorker(store, telegram, o.dataDir);
+  const oanda = new Oanda(o.dataDir);
+  const priceOf = (id: string, extended: boolean) =>
+    id.startsWith('OANDA:') ? (oanda.configured ? oanda.price(id.slice(6)) : Promise.resolve(null)) : symbolPrice(id, extended);
+  const worker = new AlertWorker(store, telegram, o.dataDir, priceOf);
   worker.start();
   store.onChange((keys) => {
     if (keys.includes('alerts')) worker.kick();
@@ -119,6 +124,38 @@ export function createApi(o: ApiOptions): Api {
       }
     }
 
+    if (path === '/oanda') {
+      if (method === 'GET') return send(res, 200, oanda.status());
+      if (method === 'POST') {
+        const body = (await readBody(req)) as { token?: unknown };
+        return send(res, 200, await oanda.configure(String(body.token ?? '').trim()));
+      }
+      if (method === 'DELETE') {
+        oanda.remove();
+        return send(res, 200, oanda.status());
+      }
+    }
+
+    if (path === '/oanda/instruments' && method === 'GET') {
+      return send(res, 200, { instruments: oanda.configured ? await oanda.instruments() : [] });
+    }
+
+    if (path === '/oanda/candles' && method === 'GET') {
+      const to = url.searchParams.get('to');
+      const bars = await oanda.candles(
+        url.searchParams.get('instrument') ?? '',
+        url.searchParams.get('granularity') ?? '',
+        Number(url.searchParams.get('count')) || 500,
+        to ? Number(to) : undefined,
+      );
+      return send(res, 200, { bars });
+    }
+
+    if (path === '/oanda/quotes' && method === 'GET') {
+      const list = (url.searchParams.get('instruments') ?? '').split(',').filter(Boolean);
+      return send(res, 200, { quotes: await oanda.quotes(list) });
+    }
+
     if (path === '/telegram/test' && method === 'POST') {
       await telegram.send('🔔 Deneme mesajı: Grafik Terminali alarmları bu sohbete gelecek.');
       return send(res, 200, { ok: true });
@@ -130,7 +167,7 @@ export function createApi(o: ApiOptions): Api {
   return {
     handle(req, res) {
       route(req, res).catch((e: unknown) => {
-        if (!res.headersSent) send(res, 400, { error: telegram.sanitize(e instanceof Error ? e.message : String(e)) });
+        if (!res.headersSent) send(res, 400, { error: oanda.sanitize(telegram.sanitize(e instanceof Error ? e.message : String(e))) });
       });
     },
     stop() {

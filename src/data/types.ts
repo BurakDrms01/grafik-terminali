@@ -1,5 +1,8 @@
-/** BINANCEF: Binance vadesiz (perpetual) piyasası: altın, gümüş, petrol gibi emtialar 7/24. */
-export type Source = 'BINANCE' | 'BINANCEF' | 'YAHOO';
+/**
+ * BINANCEF: Binance vadesiz (perpetual) piyasası: altın, gümüş, petrol gibi emtialar 7/24.
+ * OANDA: forex/CFD fiyatları (TradingView'daki OANDA:XAUUSD gibi); kullanıcının API anahtarıyla sunucu üzerinden.
+ */
+export type Source = 'BINANCE' | 'BINANCEF' | 'OANDA' | 'YAHOO';
 
 /** Binance'ten (spot ya da vadesiz) gelen, anlık akışı olan kaynak mı */
 export function isBinance(source: Source): boolean {
@@ -46,7 +49,7 @@ export function parseId(id: string): { source: Source; ticker: string } | null {
   if (i < 0) return null;
   const source = id.slice(0, i);
   const ticker = id.slice(i + 1);
-  if ((source !== 'BINANCE' && source !== 'BINANCEF' && source !== 'YAHOO') || ticker.length === 0) return null;
+  if ((source !== 'BINANCE' && source !== 'BINANCEF' && source !== 'OANDA' && source !== 'YAHOO') || ticker.length === 0) return null;
   return { source, ticker };
 }
 

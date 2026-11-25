@@ -2387,3 +2387,45 @@ body {
   width: 15px;
   height: 15px;
 }
+
+/* Arama penceresinde OANDA bağlantısı */
+.search-oanda {
+  display: flex;
+  margin: 2px 0 4px;
+}
+
+.search-oanda:empty {
+  display: none;
+}
+
+.oanda-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.oanda-pill:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.oanda-pill.on {
+  min-height: 20px;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.oanda-pill.on:hover {
+  background: transparent;
+  color: var(--text);
+  text-decoration: underline;
+}

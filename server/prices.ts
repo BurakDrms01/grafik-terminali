@@ -66,6 +66,7 @@ export async function symbolPrice(symbolId: string, extended: boolean): Promise<
   if (!p) return null;
   if (p.source === 'BINANCE') return binancePrice(p.ticker);
   if (p.source === 'BINANCEF') return binanceFuturesPrice(p.ticker);
+  if (p.source === 'OANDA') return null; // anahtar gerektirir: api.ts'teki OANDA modülü bakar
   const syn = syntheticOf(p.ticker);
   if (syn) {
     const [a, b] = await Promise.all([yahooPrice(syn.a, false), yahooPrice(syn.b, false)]);

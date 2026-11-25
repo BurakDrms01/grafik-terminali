@@ -4,7 +4,7 @@ Tarayıcıda çalışan, yerel ve ücretsiz bir teknik analiz grafik uygulaması
 
 ![Grafik Terminali: AAPL saatlik grafik, Fibonacci düzeltmesi, ön/son piyasa gölgeleri ve gece seansı fiyatı](docs/ekran-goruntusu.jpg)
 
-> **English summary.** Grafik Terminali is a self-hosted charting terminal for technical analysis, written in TypeScript on top of [KLineChart](https://github.com/klinecharts/KLineChart) with no UI framework. It covers Borsa Istanbul, US equities (including pre/post-market and the live overnight price), FX, commodities and crypto. Features include every timeframe (down to 1-second bars for crypto, plus custom intervals built by timezone-aware aggregation), about 40 drawing tools with persistent per-tool settings, Fibonacci levels on a true logarithmic price axis, a TradingView-style magnet, bar replay, symbol comparison, price alerts and a watchlist. A small Node API (a Vite plugin) syncs drawings, watchlist, alerts and settings across devices and watches alerts server-side, sending Telegram messages even when no browser is open. It runs locally (`npm start`) or in Docker, reachable privately from a phone through Tailscale. The logic is covered by 68 unit tests on the built-in `node:test` runner.
+> **English summary.** Grafik Terminali is a self-hosted charting terminal for technical analysis, written in TypeScript on top of [KLineChart](https://github.com/klinecharts/KLineChart) with no UI framework. It covers Borsa Istanbul, US equities (including pre/post-market and the live overnight price), FX, commodities and crypto, plus optional OANDA spot/CFD prices (the same XAUUSD, EURUSD or NAS100 quotes TradingView shows) through the user's own API key. Features include every timeframe (down to 1-second bars for crypto, plus custom intervals built by timezone-aware aggregation), about 40 drawing tools with persistent per-tool settings, Fibonacci levels on a true logarithmic price axis, a TradingView-style magnet, bar replay, symbol comparison, price alerts and a watchlist. A small Node API (a Vite plugin) syncs drawings, watchlist, alerts and settings across devices and watches alerts server-side, sending Telegram messages even when no browser is open. It runs locally (`npm start`) or in Docker, reachable privately from a phone through Tailscale. The logic is covered by 76 unit tests on the built-in `node:test` runner.
 
 ## Neden yaptım?
 
@@ -15,6 +15,9 @@ Kullandığım grafik platformunun yıllık aboneliği çok pahalıydı. Benim i
 ### Piyasalar ve veri
 - **BIST, ABD hisseleri, endeksler, döviz ve emtia:** Yahoo Finance'ten, yaklaşık 15 dakika gecikmeli olabilir.
 - **Kripto:** Binance'ten WebSocket ile canlı.
+- **Spot altın, gümüş, forex ve endeks CFD'leri (isteğe bağlı):** OANDA'dan, TradingView'daki OANDA:XAUUSD, OANDA:EURUSD, OANDA:NAS100USD ile aynı fiyatlar. Ücretsiz demo hesabın API anahtarı sembol aramasındaki "OANDA'yı bağla" düğmesiyle eklenir; anahtar yalnızca sunucuda durur.
+- **7/24 emtia:** Altın, gümüş, platin, paladyum, petrol, doğal gaz ve bakır için Binance vadesiz piyasası (hafta sonu da işlem görür).
+- **TradingView adlarıyla arama:** XAUUSD, US100, USOIL, ES1!, NI225, US02Y gibi adlar ve "altın", "buğday" gibi Türkçe aramalar karşılıklarına eşlenir.
 - **Hesaplanan semboller:** Gram altın ve gram gümüş (TL), ons fiyatı ile dolar/TL kurundan hesaplanır.
 - **ABD uzatılmış seansı:** Ön piyasa (04:00–09:30) ve son piyasa (16:00–20:00, New York saati) mumları, tek tıkla açılıp kapanır. Arka planları TradingView'daki gibi renkli gölgelenir.
 - **Gece seansı fiyatı:** ABD gece seansında son fiyat mor, noktalı bir çizgiyle gösterilir.
@@ -54,7 +57,7 @@ Kullandığım grafik platformunun yıllık aboneliği çok pahalıydı. Benim i
 | Dil | TypeScript (strict), arayüz çatısı yok: doğrudan DOM |
 | Grafik motoru | KLineChart 10. Özel göstergeler, özel çizim araçları ve özel log ekseniyle genişletildi. |
 | Derleme | Vite |
-| Sunucu | Vite eklentisi olarak çalışan küçük bir Node API'si (`server/`): senkron deposu, alarm takibi, Telegram |
+| Sunucu | Vite eklentisi olarak çalışan küçük bir Node API'si (`server/`): senkron deposu, alarm takibi, Telegram, OANDA vekili |
 | Test | Node.js'in kendi `node:test` aracı, 68 birim testi |
 | Kalıcılık | Tarayıcıda `localStorage`; sunucuda tek bir JSON dosyası (Docker volume) |
 
@@ -67,7 +70,7 @@ Kullandığım grafik platformunun yıllık aboneliği çok pahalıydı. Benim i
 - **Yahoo vekili:** Tarayıcıdan doğrudan erişim CORS yüzünden mümkün olmadığı için Vite'ın sunucusu istekleri iletir. Tarayıcının çerezleri ve kaynak bilgileri dışarı gönderilmez (`vite.config.ts`).
 - **Senkron:** Kayıt başına sürüm numarasıyla çalışan, "son yazan kazanır" eşitleme. Gönderilmemiş yerel değişiklik gelen veriyle ezilmez. Bir cihazın ilk eşitlemesinde çizim ve alarm listeleri birleştirilir. Boş sunucuya ilk kaydı yalnızca bilgisayar yapabilir; böylece telefon önce açılırsa boş varsayılanları asıl verinin üstüne yazmaz (`src/sync.ts`, `src/data/syncLogic.ts`, `server/`).
 - **Sunucu alarmları:** Sunucunun tetiklediği bir alarm, telefondan gelen eski bir listeyle yeniden "bekliyor" durumuna dönmez. Her alarm için en fazla bir mesaj gider (`server/alerts.ts`).
-- **API güvenliği:** Her istek özel bir başlık ister. Vite yalnızca localhost kaynaklarına CORS izni verdiği için tarayıcıda açık başka bir site API'yi kullanamaz. Telegram anahtarı hiçbir yanıtta ve logda yer almaz (`server/api.ts`, `server/telegram.ts`).
+- **API güvenliği:** Her istek özel bir başlık ister. Vite yalnızca localhost kaynaklarına CORS izni verdiği için tarayıcıda açık başka bir site API'yi kullanamaz. Telegram ve OANDA anahtarları hiçbir yanıtta ve logda yer almaz (`server/api.ts`, `server/telegram.ts`, `server/oanda.ts`).
 
 ## Kurulum
 
@@ -129,11 +132,12 @@ Bu dosya varsa bilgisayardaki uygulama `/api` isteklerini sunucuya iletir. Yoksa
 
 - Yahoo Finance verisi resmi olmayan bir API'den gelir. Gecikmeli olabilir, kişisel kullanım içindir ve Yahoo'nun kullanım şartlarına tabidir. Uygulama bu veriyi başkalarına dağıtmak için tasarlanmadı.
 - Yahoo, ABD gece seansının (20:00–04:00) mumlarını vermez, yalnızca anlık fiyatını verir.
+- OANDA fiyatları kişisel API anahtarı gerektirir ve OANDA'nın kullanım şartlarına tabidir. TradingView veri API'si sunmadığı için oradan veri çekilmez.
 - Uygulama içindeki sesli alarm yalnızca uygulama açıkken çalışır. Telegram bildirimi için sunucunun çalışıyor olması gerekir.
 
 ## Yasal uyarı
 
-Bu proje TradingView, Yahoo, Binance ya da Borsa İstanbul ile bağlantılı değildir ve onlar tarafından desteklenmez. Uygulamadaki hiçbir bilgi yatırım tavsiyesi değildir.
+Bu proje TradingView, Yahoo, Binance, OANDA ya da Borsa İstanbul ile bağlantılı değildir ve onlar tarafından desteklenmez. Uygulamadaki hiçbir bilgi yatırım tavsiyesi değildir.
 
 ## Lisans
 

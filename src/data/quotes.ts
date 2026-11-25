@@ -1,10 +1,13 @@
 // İzleme listesi ve alarmlar için ortak fiyat akışı.
-// Kripto ve Binance vadesiz emtialar: Binance WebSocket (anlık). Diğerleri: Yahoo, dakikada bir yoklama.
+// Kripto ve Binance vadesiz emtialar: Binance WebSocket (anlık). OANDA: birkaç saniyede bir (sunucu üzerinden).
+// Diğerleri: Yahoo, dakikada bir yoklama.
 import { binanceTickers, openStream, wsMiniTickerToQuote } from './binance.ts';
 import { makeQuote, parseId, type Quote, type Source } from './types.ts';
+import { oandaQuotes } from './oanda.ts';
 import { yahooQuote } from './yahoo.ts';
 
 const YAHOO_POLL_MS = 60000;
+const OANDA_POLL_MS = 5000;
 
 export class QuoteHub {
   private ids = new Set<string>();
@@ -16,6 +19,7 @@ export class QuoteHub {
     BINANCEF: { key: '', stop: null as (() => void) | null },
   };
   private yahooTimer: ReturnType<typeof setInterval> | null = null;
+  private oandaTimer: ReturnType<typeof setInterval> | null = null;
 
   on(fn: (q: Quote) => void): () => void {
     this.listeners.add(fn);
@@ -33,6 +37,17 @@ export class QuoteHub {
 
     this.watchBinance('BINANCE');
     this.watchBinance('BINANCEF');
+
+    const hasOanda = [...this.ids].some((id) => parseId(id)?.source === 'OANDA');
+    if (hasOanda && [...this.ids].some((id) => !prev.has(id) && parseId(id)?.source === 'OANDA')) void this.pollOanda();
+    if (hasOanda && this.oandaTimer === null) {
+      this.oandaTimer = setInterval(() => {
+        if (!document.hidden) void this.pollOanda();
+      }, OANDA_POLL_MS);
+    } else if (!hasOanda && this.oandaTimer !== null) {
+      clearInterval(this.oandaTimer);
+      this.oandaTimer = null;
+    }
 
     const added = [...this.ids].filter((id) => !prev.has(id) && parseId(id)?.source === 'YAHOO');
     if (added.length > 0) void this.pollYahoo(added);
@@ -81,6 +96,18 @@ export class QuoteHub {
     const prev = this.quotes.get(id);
     if (prev && prev.price === price) return;
     this.push(makeQuote(id, price, prev?.prevClose ?? null, Date.now()));
+  }
+
+  private async pollOanda(): Promise<void> {
+    const tickers = [...this.ids]
+      .map(parseId)
+      .filter((p) => p?.source === 'OANDA')
+      .map((p) => p!.ticker);
+    try {
+      (await oandaQuotes(tickers)).forEach((q) => this.push(q));
+    } catch {
+      /* OANDA bağlı değil ya da geçici hata */
+    }
   }
 
   private async pollYahoo(ids: string[]): Promise<void> {
